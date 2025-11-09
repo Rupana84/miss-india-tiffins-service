@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+  // remove:output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  orders    Order[]
+}
+
+model MenuItem {
+  id          Int         @id @default(autoincrement())
+  name        String
+  description String?
+  priceCents  Int
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  orderItems  OrderItem[]
+}
+
+model Order {
+  id        Int         @id @default(autoincrement())
+  userId    Int
+  status    OrderStatus @default(PENDING)
+  createdAt DateTime    @default(now())
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     OrderItem[]
+
+  @@index([userId])
+}
+
+model OrderItem {
+  id         Int      @id @default(autoincrement())
+  orderId    Int
+  menuItemId Int
+  quantity   Int
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([menuItemId])
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+}

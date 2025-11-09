@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { --brand:#ef4444; }
+body { font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif; }
+.hero-gradient { background: linear-gradient(135deg,#f5f7fa 0%,#c3cfe2 100%); }
+.card { @apply bg-white rounded-2xl shadow p-6; }
+.btn { @apply inline-flex items-center justify-center rounded-full px-5 py-3 font-semibold transition; }
+.btn-primary { @apply btn text-white bg-red-500 hover:bg-red-600; }
+.btn-outline { @apply btn border border-red-500 text-red-500 hover:bg-red-500 hover:text-white; }
