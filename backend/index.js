@@ -11,17 +11,21 @@ if (!process.env.JWT_SECRET) {
 }
 
 // ---- CORS (supports multiple origins) ----
+// ---- CORS (Express 5-safe) ----
 const RAW_ORIGIN = process.env.ORIGIN || "http://localhost:5173";
 const ORIGINS = RAW_ORIGIN.split(",").map(s => s.trim()).filter(Boolean);
+
 const corsOpts = {
   origin: ORIGINS,
   methods: ["GET", "POST", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: false,
 };
-const app = express();
+
 app.use(cors(corsOpts));
-app.options("*", cors(corsOpts)); // preflight
+// Express 5: use a regex instead of "*" for preflight, or omit entirely.
+// Either keep this:
+app.options("/(.*)", cors(corsOpts));  // handles preflight for any path
+// or delete the line above; `app.use(cors(...))` is usually enough.
 
 // ---- Core ----
 const prisma = new PrismaClient();
