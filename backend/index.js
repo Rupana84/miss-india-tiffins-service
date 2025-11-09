@@ -1,34 +1,38 @@
 // index.js — Miss India Tiffins Service (backend)
 import express from "express";
-import cors from "cors";
 import "dotenv/config";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 
-// ---- env + CORS ----
+const app = express();
+const prisma = new PrismaClient();
+const PORT = process.env.PORT || 5051;
+
+// --- config ---
 if (!process.env.JWT_SECRET) {
   console.warn("WARN: JWT_SECRET is not set. Set it in Railway variables.");
 }
 const RAW_ORIGIN = process.env.ORIGIN || "http://localhost:5173";
 const ORIGINS = RAW_ORIGIN.split(",").map(s => s.trim()).filter(Boolean);
 
-const corsOpts = {
-  origin: ORIGINS,
-  methods: ["GET", "POST", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-};
-
-// ---- app + db ----
-const app = express();                 // define app BEFORE using it
-const prisma = new PrismaClient();
-const PORT = process.env.PORT || 5051;
-
-app.use(cors(corsOpts));
-app.options("/(.*)", cors(corsOpts));  // Express 5 safe wildcard
+// --- middleware ---
 app.use(express.json());
 
-// ---- helpers ----
+// CORS + preflight (Express 5 safe; no wildcards in route patterns)
+app.use((req, res, next) => {
+  const reqOrigin = req.headers.origin;
+  const allowOrigin = ORIGINS.includes(reqOrigin) ? reqOrigin : ORIGINS[0];
+  if (allowOrigin) res.setHeader("Access-Control-Allow-Origin", allowOrigin);
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
+// --- helpers ---
 const sign = (u) => jwt.sign({ id: u.id }, process.env.JWT_SECRET, { expiresIn: "1h" });
 const auth = () => (req, res, next) => {
   try {
@@ -40,14 +44,15 @@ const auth = () => (req, res, next) => {
   }
 };
 
-// ---- health & root ----
+// --- health & root ---
 app.get("/", (_req, res) => res.send("Miss India Tiffins Service API running. Try /health or /menu"));
 app.get("/health", (_req, res) => res.json({ ok: true, service: "miss-india-tiffins" }));
 
-// ---- auth ----
+// --- auth ---
 app.post("/auth/signup", async (req, res) => {
   const { name, email, password } = req.body || {};
   if (!name || !email || !password) return res.status(400).json({ error: "missing_fields" });
+
   const hash = await bcrypt.hash(password, 10);
   try {
     const u = await prisma.user.create({ data: { name, email, password: hash } });
@@ -60,6 +65,7 @@ app.post("/auth/signup", async (req, res) => {
 app.post("/auth/login", async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: "missing_fields" });
+
   const u = await prisma.user.findUnique({ where: { email } });
   if (!u || !(await bcrypt.compare(password, u.password))) return res.sendStatus(401);
   res.json({ access: sign(u) });
@@ -73,24 +79,24 @@ app.get("/me", auth(), async (req, res) => {
   res.json(u);
 });
 
-// ---- menu ----
+// --- menu ---
 app.get("/menu", async (_req, res) => {
   const items = await prisma.menuItem.findMany({
     where: { isActive: true },
-    orderBy: { id: "asc" },
+    orderBy: { id: "asc" }
   });
-  res.json(
-    items.map(i => ({
-      id: i.id,
-      name: i.name,
-      description: i.description,
-      isActive: i.isActive,
-      priceCents: i.priceCents,
-      price: (i.priceCents / 100).toFixed(2),
-    }))
-  );
+  const view = items.map(i => ({
+    id: i.id,
+    name: i.name,
+    description: i.description,
+    isActive: i.isActive,
+    priceCents: i.priceCents,
+    price: (i.priceCents / 100).toFixed(2),
+  }));
+  res.json(view);
 });
 
+// keep open for demo; add auth/role later if needed
 app.post("/menu", async (req, res) => {
   const { name, description = null, priceCents, isActive = true } = req.body || {};
   const cents = Number(priceCents);
@@ -101,13 +107,15 @@ app.post("/menu", async (req, res) => {
   res.status(201).json(m);
 });
 
-// ---- orders ----
+// --- orders ---
 app.post("/orders", auth(), async (req, res) => {
   try {
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
     if (!items.length) return res.status(400).json({ error: "no_items" });
 
     const ids = items.map(i => Number(i.menuItemId)).filter(Number.isFinite);
+    if (!ids.length) return res.status(400).json({ error: "bad_items" });
+
     const db = await prisma.menuItem.findMany({ where: { id: { in: ids } } });
     if (!db.length) return res.status(400).json({ error: "bad_items" });
 
@@ -146,6 +154,7 @@ app.patch("/orders/:id/status", async (req, res) => {
   const id = Number(req.params.id);
   const allowed = new Set(["PENDING", "PAID", "CANCELLED"]);
   const status = String(req.body?.status || "").toUpperCase();
+
   if (!Number.isFinite(id) || !allowed.has(status)) {
     return res.status(400).json({ error: "invalid_status" });
   }
@@ -153,9 +162,16 @@ app.patch("/orders/:id/status", async (req, res) => {
   res.json(o);
 });
 
-// ---- start + shutdown ----
+// --- graceful shutdown ---
 const server = app.listen(PORT, () =>
   console.log(`Miss India Tiffins Service API http://localhost:${PORT}`)
 );
-process.on("SIGINT", async () => { await prisma.$disconnect(); server.close(() => process.exit(0)); });
-process.on("SIGTERM", async () => { await prisma.$disconnect(); server.close(() => process.exit(0)); });
+
+process.on("SIGINT", async () => {
+  await prisma.$disconnect();
+  server.close(() => process.exit(0));
+});
+process.on("SIGTERM", async () => {
+  await prisma.$disconnect();
+  server.close(() => process.exit(0));
+});
