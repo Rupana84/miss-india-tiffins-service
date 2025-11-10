@@ -32,16 +32,15 @@ app.use((req, res, next) => {
   next();
 });
 
-// --- helpers ---
-const sign = (u) => jwt.sign({ id: u.id }, process.env.JWT_SECRET, { expiresIn: "1h" });
-const auth = () => (req, res, next) => {
-  try {
-    const t = (req.headers.authorization || "").replace("Bearer ", "");
-    req.user = jwt.verify(t, process.env.JWT_SECRET);
-    next();
-  } catch {
-    res.sendStatus(401);
+// helpers
+const sign = (u) => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    const err = new Error("JWT secret missing");
+    err.code = "NO_JWT_SECRET";
+    throw err;
   }
+  return jwt.sign({ id: u.id }, secret, { expiresIn: "1h" });
 };
 
 // --- health & root ---
@@ -49,36 +48,46 @@ app.get("/", (_req, res) => res.send("Miss India Tiffins Service API running. Tr
 app.get("/health", (_req, res) => res.json({ ok: true, service: "miss-india-tiffins" }));
 
 // --- auth ---
+// /auth/signup with proper Prisma error mapping
 app.post("/auth/signup", async (req, res) => {
-  const { name, email, password } = req.body || {};
-  if (!name || !email || !password) return res.status(400).json({ error: "missing_fields" });
-
-  const hash = await bcrypt.hash(password, 10);
   try {
+    const { name, email, password } = req.body || {};
+    if (!name || !email || !password) return res.status(400).json({ error: "missing_fields" });
+
+    // very basic email check to avoid obvious 400s
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return res.status(400).json({ error: "invalid_email" });
+    }
+
+    const hash = await bcrypt.hash(password, 10);
     const u = await prisma.user.create({ data: { name, email, password: hash } });
-    res.json({ access: sign(u) });
-  } catch {
-    res.status(400).json({ error: "email_exists_or_invalid" });
+    return res.json({ access: sign(u) });
+  } catch (e) {
+    if (e.code === "P2002") return res.status(400).json({ error: "email_exists" });
+    console.error("signup_error:", e);
+    return res.status(500).json({ error: "server_error" });
   }
 });
 
+// /auth/login with logging and clean 401
 app.post("/auth/login", async (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: "missing_fields" });
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: "missing_fields" });
 
-  const u = await prisma.user.findUnique({ where: { email } });
-  if (!u || !(await bcrypt.compare(password, u.password))) return res.sendStatus(401);
-  res.json({ access: sign(u) });
+    const u = await prisma.user.findUnique({ where: { email } });
+    if (!u) return res.sendStatus(401);
+
+    const ok = await bcrypt.compare(password, u.password);
+    if (!ok) return res.sendStatus(401);
+
+    return res.json({ access: sign(u) });
+  } catch (e) {
+    if (e.code === "NO_JWT_SECRET") return res.status(500).json({ error: "server_misconfig" });
+    console.error("login_error:", e);
+    return res.status(500).json({ error: "server_error" });
+  }
 });
-
-app.get("/me", auth(), async (req, res) => {
-  const u = await prisma.user.findUnique({
-    where: { id: req.user.id },
-    select: { id: true, name: true, email: true, createdAt: true },
-  });
-  res.json(u);
-});
-
 // --- menu ---
 app.get("/menu", async (_req, res) => {
   const items = await prisma.menuItem.findMany({
