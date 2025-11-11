@@ -1,42 +1,26 @@
 // frontend/src/lib/api.js
-const BASE =
-  import.meta.env?.VITE_API_URL ||
-  (typeof window !== "undefined" && window.__API_URL__) ||
-  "http://localhost:5051";
+const base =
+  (import.meta.env.VITE_API_URL || import.meta.env.NEXT_PUBLIC_API_URL || "")
+    .replace(/\/$/, "") || "https://miss-india-tiffins-service-production.up.railway.app";
 
-const request = async (path, opts = {}) => {
-  const res = await fetch(`${BASE}${path}`, {
+async function req(method, path, body, token) {
+  const res = await fetch(`${base}${path}`, {
+    method,
     headers: {
       "Content-Type": "application/json",
-      ...(opts.headers || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    ...opts,
+    body: body ? JSON.stringify(body) : undefined,
   });
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
-  }
+  const text = await res.text();
+  let data;
+  try { data = text ? JSON.parse(text) : {}; } catch { throw new Error(`Bad JSON: ${text}`); }
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
 
-  const ct = res.headers.get("content-type") || "";
-  return ct.includes("application/json") ? res.json() : res.text();
-};
-
-export const signup = ({ name, email, password }) =>
-  request("/auth/signup", {
-    method: "POST",
-    body: JSON.stringify({ name, email, password }),
-  });
-
-export const login = ({ email, password }) =>
-  request("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
-
-export const me = (token) =>
-  request("/me", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-export const menu = () => request("/menu");
+export const health = () => req("GET", "/health");
+export const signup = (p) => req("POST", "/auth/signup", p);
+export const login  = (p) => req("POST", "/auth/login", p);
+export const me     = (t) => req("GET",  "/me", null, t);
