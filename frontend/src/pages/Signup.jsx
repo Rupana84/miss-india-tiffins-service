@@ -10,23 +10,17 @@ export default function Signup() {
   const nav = useNavigate();
 
   const submit = async (e) => {
-    e.preventDefault();
-    setErr(null);
-    try {
-      const res = await signup({ name, email, password });
-      if (res?.access) {
-        localStorage.setItem("token", res.access);
-        nav("/");
-      } else if (res?.error) {
-        setErr(res.error);
-      } else {
-        setErr("Unexpected response");
-      }
-    } catch (ex) {
-      console.error("Signup error:", ex);
-      setErr("Signup failed. Please try again.");
-    }
-  };
+  e.preventDefault();
+  setErr(null);
+  try {
+    const { access } = await signup({ name, email, password });
+    localStorage.setItem("token", access);
+    nav("/");
+  } catch (ex) {
+    setErr("Signup failed");
+    console.error(ex);
+  }
+};
 
   return (
     <form
