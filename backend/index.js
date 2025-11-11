@@ -197,7 +197,7 @@ app.patch("/orders/:id/status", async (req, res) => {
   res.json(o);
 });
 
-// ---- start & shutdown ----
+// ---- start & shutdown -----
 const server = app.listen(PORT, () =>
   console.log(`API listening on :${PORT}`)
 );
