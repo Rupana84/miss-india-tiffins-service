@@ -1,47 +1,42 @@
-// src/lib/api.js
-const viteBase =
-  typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_URL;
-const nextBase = typeof process !== "undefined" ? process.env.NEXT_PUBLIC_API_URL : undefined;
+// frontend/src/lib/api.js
+const BASE =
+  import.meta.env?.VITE_API_URL ||
+  (typeof window !== "undefined" && window.__API_URL__) ||
+  "http://localhost:5051";
 
-export const API_BASE =
-  (viteBase && String(viteBase).trim().replace(/\/+$/, "")) ||
-  (nextBase && String(nextBase).trim().replace(/\/+$/, "")) ||
-  "";
-
-if (!API_BASE) {
-  console.error("API base missing. Set VITE_API_URL or NEXT_PUBLIC_API_URL.");
-}
-
-async function http(path: string, init?: RequestInit) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: "GET",
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
-    ...init,
+const request = async (path, opts = {}) => {
+  const res = await fetch(`${BASE}${path}`, {
+    headers: {
+      "Content-Type": "application/json",
+      ...(opts.headers || {}),
+    },
+    ...opts,
   });
-  const text = await res.text();
-  let data: any = undefined;
-  try { data = text ? JSON.parse(text) : undefined; } catch {}
+
   if (!res.ok) {
-    const err = (data && (data.error || data.message)) || res.statusText || "request_failed";
-    throw new Error(String(err));
+    const text = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
   }
-  return data;
-}
 
-export function signup(payload: { name: string; email: string; password: string }) {
-  return http("/auth/signup", {
+  const ct = res.headers.get("content-type") || "";
+  return ct.includes("application/json") ? res.json() : res.text();
+};
+
+export const signup = ({ name, email, password }) =>
+  request("/auth/signup", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ name, email, password }),
   });
-}
 
-export function login(payload: { email: string; password: string }) {
-  return http("/auth/login", {
+export const login = ({ email, password }) =>
+  request("/auth/login", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ email, password }),
   });
-}
 
-export function me(token: string) {
-  return http("/me", { headers: { Authorization: `Bearer ${token}` } });
-}
+export const me = (token) =>
+  request("/me", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const menu = () => request("/menu");
