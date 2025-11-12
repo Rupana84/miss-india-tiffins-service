@@ -1,11 +1,12 @@
-// frontend/src/lib/api.js
-const base =
+// src/lib/api.js
+const BASE =
   (import.meta.env.VITE_API_URL || import.meta.env.NEXT_PUBLIC_API_URL || "")
-    .replace(/\/$/, "") ||
-  "https://miss-india-tiffins-service-production.up.railway.app";
+    .replace(/\/+$/, "");
 
-async function req(method, path, body, token) {
-  const res = await fetch(`${base}${path}`, {
+if (!BASE) console.warn("API base URL missing. Set VITE_API_URL in Vercel.");
+
+async function request(path, { method = "GET", body, token } = {}) {
+  const res = await fetch(`${BASE}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
@@ -13,19 +14,33 @@ async function req(method, path, body, token) {
     },
     body: body ? JSON.stringify(body) : undefined,
   });
-
-  const text = await res.text();
-  let data = {};
-  if (text) {
-    try { data = JSON.parse(text); } catch { throw new Error(text); }
+  const isJSON = res.headers.get("content-type")?.includes("application/json");
+  const data = isJSON ? await res.json().catch(() => ({})) : {};
+  if (!res.ok) {
+    const msg = data?.error || `HTTP_${res.status}`;
+    throw new Error(msg);
   }
-  if (!res.ok) throw new Error(data.error || res.statusText || "request_failed");
   return data;
 }
 
-export const health      = () => req("GET",  "/health");
-export const getMenu     = () => req("GET",  "/menu");
-export const signup      = (p) => req("POST", "/auth/signup", p);
-export const login       = (p) => req("POST", "/auth/login", p);
-export const me          = (t) => req("GET",  "/me", null, t);
-export const createOrder = (items, token) => req("POST", "/orders", { items }, token);
+export function getHealth() {
+  return request("/health");
+}
+export function getMenu() {
+  return request("/menu");
+}
+export function signup({ name, email, password }) {
+  return request("/auth/signup", { method: "POST", body: { name, email, password } });
+}
+export function login({ email, password }) {
+  return request("/auth/login", { method: "POST", body: { email, password } });
+}
+export function me(token) {
+  return request("/me", { token });
+}
+export function createOrder({ token, items }) {
+  return request("/orders", { method: "POST", body: { items }, token });
+}
+
+// Optional debug helper
+export const __API_BASE__ = BASE;

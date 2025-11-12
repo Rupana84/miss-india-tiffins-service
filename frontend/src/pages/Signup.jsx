@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { signup } from "../lib/api";
+import { signup, __API_BASE__ } from "../lib/api";
 import { useNavigate } from "react-router-dom";
 
 export default function Signup() {
